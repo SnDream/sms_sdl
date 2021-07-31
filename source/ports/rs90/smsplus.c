@@ -44,6 +44,10 @@ static uint32_t update_window_size(uint32_t w, uint32_t h);
 
 static uint8_t* dst_yuv[3];
 
+#ifdef RS90_GGONLY
+static uint8_t updatebg = 0;
+#endif
+
 /* This is solely relying on the IPU chip implemented in the kernel
  * for centering, scaling (with bilinear filtering) etc...
 */
@@ -52,6 +56,7 @@ static void video_update(void)
 	uint_fast16_t height, width, i, pixels_shifting_remove;
 	uint_fast8_t a, plane;
 	
+	#ifndef RS90_GGONLY
 	if (sms.console == CONSOLE_GG)
 	{
 		/*	pixels_shifting_remove is used to skip the parts of the screen that we don't want.
@@ -77,6 +82,17 @@ static void video_update(void)
 			forcerefresh = 0;
 		}
 	}
+	#else
+	pixels_shifting_remove = (256 * 24) + 48;
+	height = 160;
+	width = 240;
+	if (sdl_screen->h != 160 || forcerefresh == 1)
+	{
+		update_window_size(240, 160);
+		forcerefresh = 0;
+		updatebg = 0;
+	}
+	#endif
 	
 	/* Yes, this mess is really for the 8-bits palette mode.*/
 	if (bitmap.pal.update == 1){
@@ -106,9 +122,15 @@ static void video_update(void)
 	}
 	
 	#ifdef NOYUV
+	 #ifndef RS90_GGONLY
 	if (pixels_shifting_remove) sms_bitmap->pixels += pixels_shifting_remove;
 	SDL_BlitSurface(sms_bitmap, NULL, sdl_screen, NULL);
 	if (pixels_shifting_remove) sms_bitmap->pixels -= pixels_shifting_remove;
+	 #else
+	static SDL_Rect srcrect = { .x=48, .y=24, .w=VIDEO_WIDTH_GG, .h=VIDEO_HEIGHT_GG };
+	static SDL_Rect drcrect = { .x=40, .y=8,  .w=VIDEO_WIDTH_GG, .h=VIDEO_HEIGHT_GG };
+	SDL_BlitSurface(sms_bitmap, &srcrect , sdl_screen, &drcrect);
+	 #endif
 	#else
 	
 	/* This code is courtesy of Slaneesh. Many thanks to him for the help and special thanks also to Johnny too. 
@@ -119,15 +141,40 @@ static void video_update(void)
 	dst_yuv[0] = sdl_screen->pixels;
 	dst_yuv[1] = dst_yuv[0] + height * sdl_screen->pitch;
 	dst_yuv[2] = dst_yuv[1] + height * sdl_screen->pitch;
+	 #ifdef RS90_GGONLY
+	if (updatebg <= 6 && updatebg >= 0) {
+		updatebg++;
+		for (plane=0; plane<3; plane++) /* The three Y, U and V planes */
+		{
+			for (uint32_t y = 0; y < 160; y++)   /* The number of lines to copy */
+			{
+				register uint32_t *dst = (uint32_t *)&dst_yuv[plane][240 * y];
+				__builtin_prefetch(dst, 1, 0 );
+				for(uint32_t x = 0; x < 240; x++) {
+					*dst++ = 0x80808080;
+				}
+			}
+		}
+	}
+	 #endif
     for (plane=0; plane<3; plane++) /* The three Y, U and V planes */
     {
         uint32_t y;
         register uint8_t *pal = drm_palette[plane];
+        #ifndef RS90_GGONLY
         for (y=0; y < height; y++)   /* The number of lines to copy */
+        #else
+        for (y=0; y < VIDEO_HEIGHT_GG; y++)   /* The number of lines to copy */
+        #endif
         {
             register uint8_t *src = srcbase + (y*sms_bitmap->w);
+            #ifndef RS90_GGONLY
             register uint8_t *end = src + width;
             register uint32_t *dst = (uint32_t *)&dst_yuv[plane][width * y];
+            #else
+            register uint8_t *end = src + VIDEO_WIDTH_GG;
+            register uint32_t *dst = (uint32_t *)&dst_yuv[plane][width * y + 240 * 8 + 40];
+            #endif
 
              __builtin_prefetch(pal, 0, 1 );
              __builtin_prefetch(src, 0, 1 );
@@ -800,7 +847,7 @@ static void config_load()
 	{
         printf("Config NOT loaded. >%s\n",config_path);
         
-		for (i = 0; i < 19; i++)
+		for (i = 0; i < 18; i++)
 		{
 			option.config_buttons[i] = 0;
 		}
@@ -856,10 +903,18 @@ static void Cleanup(void)
 uint32_t update_window_size(uint32_t w, uint32_t h)
 {
 	if (h == 0) h = 192;
+#ifndef RS90_GGONLY
 #ifdef NOYUV
 	sdl_screen = SDL_SetVideoMode(w, h, 8, SDL_HWSURFACE | SDL_TRIPLEBUF | SDL_HWPALETTE);
 #else
 	sdl_screen = SDL_SetVideoMode(w, h, 24, SDL_HWSURFACE | SDL_TRIPLEBUF | SDL_YUV444 | SDL_ANYFORMAT | SDL_FULLSCREEN);
+#endif
+#else
+#ifdef NOYUV
+	sdl_screen = SDL_SetVideoMode(w, h, 8, SDL_HWSURFACE | SDL_DOUBLEBUF | SDL_HWPALETTE);
+#else
+	sdl_screen = SDL_SetVideoMode(w, h, 24, SDL_HWSURFACE | SDL_DOUBLEBUF | SDL_YUV444 | SDL_ANYFORMAT | SDL_FULLSCREEN);
+#endif
 #endif
 	return 0;
 }
@@ -904,6 +959,14 @@ int main (int argc, char *argv[])
 		return 0;
 	}
 	
+	#ifdef RS90_GGONLY
+	if (sms.console != CONSOLE_GG) {
+		fprintf(stderr, "Error: %s is not a Game Gear rom.\n", argv[1]);
+		Cleanup();
+		return 0;
+	}
+	#endif
+
 	/* Force 50 Fps refresh rate for PAL only games */
 	if (sms.display == DISPLAY_PAL)
 	{
@@ -995,6 +1058,9 @@ int main (int argc, char *argv[])
 						Menu();
 						input.system &= (IS_GG) ? ~INPUT_START : ~INPUT_PAUSE;
 						forcerefresh = 1;
+						#ifdef RS90_GGONLY
+						updatebg = 0;
+						#endif
 					}
 					sdl_controls_update_input_down(event.key.keysym.sym);
 				break;

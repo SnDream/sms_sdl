@@ -51,6 +51,10 @@ typedef struct {
 
 void smsp_state(uint8_t slot_number, uint8_t mode);
 
+#ifndef RS90_GGONLY
 #define SOUND_FREQUENCY 22050
+#else
+#define SOUND_FREQUENCY 44100
+#endif
 
 #endif

@@ -70,6 +70,11 @@ ifeq ($(SOUND_OUTPUT), pulse)
 LDFLAGS		+= -lpulse -lpulse-simple
 endif
 
+ifeq ($(RS90_GGONLY), YES)
+CFLAGS		+= -fno-PIC
+CFLAGS		+= -DNOYUV -DRS90_GGONLY
+endif
+
 # Rules to make executable
 $(PRGNAME): $(OBJS)  
 	$(CC) $(CFLAGS) -o $(PRGNAME) $^ $(LDFLAGS)

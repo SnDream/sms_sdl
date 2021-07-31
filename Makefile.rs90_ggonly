@@ -1,0 +1,2 @@
+RS90_GGONLY = YES
+include Makefile.rs90

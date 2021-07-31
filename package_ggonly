@@ -1,0 +1,38 @@
+#!/bin/sh
+
+mkdir -p opk
+cp ./sms_sdl opk/sms_sdl
+if [ -e ./sega_game_gear.png ]
+then cp ./sega_game_gear.png opk/gg.png
+else cp ./sms_sdl.png opk/gg.png
+fi
+cp ./docs/license opk/COPYING
+
+# https://unix.stackexchange.com/questions/219268/how-to-add-new-lines-when-using-echo
+print()
+	case    ${IFS- } in
+	(\ *)   printf  %b\\n "$*";;
+	(*)     IFS=\ $IFS
+	printf  %b\\n "$*"
+	IFS=${IFS#?}
+esac
+
+# Create GmenuNx entry file plus other things
+
+print '[Desktop Entry]
+Type=Application
+Name=SMS Plus GX(GG)
+Comment=Game gear emulator
+Exec=sms_sdl %f
+Icon=gg
+Terminal=false
+Type=Application
+Categories=emulators;
+X-OD-NeedsDownscaling=true
+selectorbrowser=true
+SelectorFilter=gg,GG,zip,ZIP
+' > opk/default."$1".desktop
+
+mksquashfs ./opk smsplusgg_"$1".opk -all-root -noappend -no-exports -no-xattrs
+
+rm -r opk
