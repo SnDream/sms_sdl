@@ -876,7 +876,7 @@ static void config_load()
 	}
 	else
 	{
-		for (i = 0; i < 18; i++)
+		for (i = 0; i < sizeof(option); i++)
 		{
 			option.config_buttons[i] = 0;
 		}
@@ -964,6 +964,9 @@ int main (int argc, char *argv[])
 	if (option.fullscreen < 0 && option.fullscreen > upscalers_available) option.fullscreen = 1;
 	if (option.console != 3 && option.fullscreen > 1) option.fullscreen = 1;
 	
+	if (sms.console == CONSOLE_SMS || sms.console == CONSOLE_SMS2)
+		sms.use_fm = 1; 
+	
 	// Load ROM
 	if(!load_rom(argv[1])) 
 	{
@@ -996,8 +999,6 @@ int main (int argc, char *argv[])
 	bitmap.viewport.y = 0x00;
 	
 	//sms.territory = settings.misc_region;
-	if (sms.console == CONSOLE_SMS || sms.console == CONSOLE_SMS2)
-		sms.use_fm = 1; 
 	
 	bios_init();
 

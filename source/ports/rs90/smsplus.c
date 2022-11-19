@@ -37,12 +37,11 @@ static const uint32_t YUV_MAT[3][3] = {
 	{UINT16_16(0.168736f), UINT16_16(0.331264f), UINT16_16(0.5f)},
 	{UINT16_16(0.5f),      UINT16_16(0.418688f), UINT16_16(0.081312f)}
 };
+static uint8_t* dst_yuv[3];
 #endif
 
 static uint_fast8_t forcerefresh = 0;
 static uint32_t update_window_size(uint32_t w, uint32_t h);
-
-static uint8_t* dst_yuv[3];
 
 #ifdef RS90_GGONLY
 static uint8_t updatebg = 0;
@@ -53,7 +52,8 @@ static uint8_t updatebg = 0;
 */
 static void video_update(void)
 {
-	uint_fast16_t height, width, i, pixels_shifting_remove;
+	uint_fast16_t height, width;
+	uint_fast16_t i, pixels_shifting_remove;
 	uint_fast8_t a, plane;
 	
 	#ifndef RS90_GGONLY
@@ -833,7 +833,7 @@ static void config_load()
 {
 	uint_fast8_t i;
 	char config_path[256];
-	snprintf(config_path, sizeof(config_path), "%s/config.cfg", home_path);
+	snprintf(config_path, sizeof(config_path), "%sconfig.cfg", home_path);
 	FILE* fp;
 	
 	fp = fopen(config_path, "rb");
@@ -868,7 +868,7 @@ static void config_load()
 static void config_save()
 {
 	char config_path[256];
-	snprintf(config_path, sizeof(config_path), "%s/config.cfg", home_path);
+	snprintf(config_path, sizeof(config_path), "%sconfig.cfg", home_path);
 	FILE* fp;
 	
 	fp = fopen(config_path, "wb");
@@ -951,6 +951,9 @@ int main (int argc, char *argv[])
 	if (strcmp(strrchr(argv[1], '.'), ".col") == 0) option.console = 6;
 	// Sometimes Game Gear games are not properly detected, force them accordingly
 	else if (strcmp(strrchr(argv[1], '.'), ".gg") == 0) option.console = 3;
+
+	if (sms.console == CONSOLE_SMS || sms.console == CONSOLE_SMS2)
+		sms.use_fm = 1; 
 
 	// Load ROM
 	if(!load_rom(argv[1])) {
