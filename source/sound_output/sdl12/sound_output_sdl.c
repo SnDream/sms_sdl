@@ -142,6 +142,9 @@ void Sound_Pause()
 
 void Sound_Unpause()
 {
+	buf_read_pos = 0;
+	buf_write_pos = 0;
+	buffered_bytes = 0;
 	SDL_PauseAudio(0);
 }
 
