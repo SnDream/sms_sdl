@@ -72,7 +72,7 @@ endif
 
 ifeq ($(RS90_GGONLY), YES)
 CFLAGS		+= -fno-PIC
-CFLAGS		+= -DNOYUV -DRS90_GGONLY
+CFLAGS		+= -DRS90_GGONLY
 endif
 
 # Rules to make executable

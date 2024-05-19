@@ -18,8 +18,8 @@
 #define CONFIG_BUTTON_DOWN 1
 #define CONFIG_BUTTON_LEFT 2
 #define CONFIG_BUTTON_RIGHT 3
-#define CONFIG_BUTTON_BUTTON1 4
-#define CONFIG_BUTTON_BUTTON2 5
+#define CONFIG_BUTTON_BUTTON1 5 /* Compatible with older profiles */
+#define CONFIG_BUTTON_BUTTON2 4 /* Compatible with older profiles */
 #define CONFIG_BUTTON_START 6
 
 /* Colecovision specific */

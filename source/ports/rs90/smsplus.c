@@ -52,7 +52,7 @@ static uint8_t updatebg = 0;
 */
 static void video_update(void)
 {
-	uint_fast16_t height, width;
+	uint_fast16_t height, width, offset, border_width;
 	uint_fast16_t i, pixels_shifting_remove;
 	uint_fast8_t a, plane;
 	
@@ -83,6 +83,7 @@ static void video_update(void)
 		}
 	}
 	#else
+	 #ifdef NOYUV
 	pixels_shifting_remove = (256 * 24) + 48;
 	height = 160;
 	width = 240;
@@ -92,6 +93,34 @@ static void video_update(void)
 		forcerefresh = 0;
 		updatebg = 0;
 	}
+	 #else
+	pixels_shifting_remove = (256 * 24) + 48;
+	height = 160;
+	switch(option.fullscreen) {
+	default:
+	case 0:
+		width = 240;
+		offset = 240 * 8 + 40;
+		border_width = 80;
+		break;
+	case 1:
+		width = 200;
+		offset = 200 * 8 + 20;
+		border_width = 40;
+		break;
+	case 2:
+		width = 160;
+		offset = 160 * 8;
+		border_width = 0;
+		break;
+	}
+	if (sdl_screen->h != 160 || forcerefresh == 1)
+	{
+		update_window_size(width, 160);
+		forcerefresh = 0;
+		updatebg = 0;
+	}
+	 #endif
 	#endif
 	
 	/* Yes, this mess is really for the 8-bits palette mode.*/
@@ -142,17 +171,31 @@ static void video_update(void)
 	dst_yuv[1] = dst_yuv[0] + height * sdl_screen->pitch;
 	dst_yuv[2] = dst_yuv[1] + height * sdl_screen->pitch;
 	 #ifdef RS90_GGONLY
-	if (updatebg <= 6 && updatebg >= 0) {
-		updatebg++;
-		for (plane=0; plane<3; plane++) /* The three Y, U and V planes */
+	for (plane=0; plane<3; plane++) /* The three Y, U and V planes */
+	{
+		register uint32_t pix = drm_palette[plane][0] | (drm_palette[plane][0] << 8) | (drm_palette[plane][0] << 16) | (drm_palette[plane][0] << 24 ) ;
+		for (uint32_t y = 0; y < 8; y++)   /* The number of lines to copy */
 		{
-			for (uint32_t y = 0; y < 160; y++)   /* The number of lines to copy */
-			{
-				register uint32_t *dst = (uint32_t *)&dst_yuv[plane][240 * y];
-				__builtin_prefetch(dst, 1, 0 );
-				for(uint32_t x = 0; x < 240; x++) {
-					*dst++ = 0x80808080;
-				}
+			register uint32_t *dst = (uint32_t *)&dst_yuv[plane][width * y];
+			__builtin_prefetch(dst, 1, 0 );
+			for(uint32_t x = 0; x < width; x++) {
+				*dst++ = pix;
+			}
+		}
+		for (uint32_t y = 160 - 8; y < 160; y++)   /* The number of lines to copy */
+		{
+			register uint32_t *dst = (uint32_t *)&dst_yuv[plane][width * y];
+			__builtin_prefetch(dst, 1, 0 );
+			for(uint32_t x = 0; x < width; x++) {
+				*dst++ = pix;
+			}
+		}
+		for (uint32_t y = 8; y <= 160 - 8; y++)   /* The number of lines to copy */
+		{
+			register uint32_t *dst = (uint32_t *)&dst_yuv[plane][width * y - border_width / 2];
+			__builtin_prefetch(dst, 1, 0 );
+			for(uint32_t x = 0; x < border_width; x++) {
+				*dst++ = pix;
 			}
 		}
 	}
@@ -173,7 +216,7 @@ static void video_update(void)
             register uint32_t *dst = (uint32_t *)&dst_yuv[plane][width * y];
             #else
             register uint8_t *end = src + VIDEO_WIDTH_GG;
-            register uint32_t *dst = (uint32_t *)&dst_yuv[plane][width * y + 240 * 8 + 40];
+            register uint32_t *dst = (uint32_t *)&dst_yuv[plane][width * y + offset];
             #endif
 
              __builtin_prefetch(pal, 0, 1 );
@@ -286,11 +329,11 @@ static uint32_t sdl_controls_update_input_down(SDLKey k)
 	}
 	else if (k == option.config_buttons[CONFIG_BUTTON_BUTTON1])
 	{
-		input.pad[0] |= INPUT_BUTTON2;
+		input.pad[0] |= INPUT_BUTTON1;
 	}
 	else if (k == option.config_buttons[CONFIG_BUTTON_BUTTON2])
 	{
-		input.pad[0] |= INPUT_BUTTON1;
+		input.pad[0] |= INPUT_BUTTON2;
 	}
 	else if (k == option.config_buttons[CONFIG_BUTTON_START])
 	{
@@ -338,11 +381,11 @@ static uint32_t sdl_controls_update_input_release(SDLKey k)
 	{
 		input.pad[0] &= ~INPUT_DOWN;
 	}
-	else if (k == option.config_buttons[CONFIG_BUTTON_BUTTON1])
+	else if (k == option.config_buttons[CONFIG_BUTTON_BUTTON2])
 	{
 		input.pad[0] &= ~INPUT_BUTTON2;
 	}
-	else if (k == option.config_buttons[CONFIG_BUTTON_BUTTON2])
+	else if (k == option.config_buttons[CONFIG_BUTTON_BUTTON1])
 	{
 		input.pad[0] &= ~INPUT_BUTTON1;
 	}
@@ -586,7 +629,18 @@ static void Input_Remapping()
 						{
 							if (Event.type == SDL_KEYDOWN)
 							{
-								option.config_buttons[(currentselection - 1) + (menu_config_input ? 7 : 0) ] = Event.key.keysym.sym;
+								int32_t currentselection_fixed;
+								switch (currentselection) {
+									case 5:
+										currentselection_fixed = CONFIG_BUTTON_BUTTON1 + 1;
+										break;
+									case 6:
+										currentselection_fixed = CONFIG_BUTTON_BUTTON2 + 1;
+										break;
+									default:
+										currentselection_fixed = currentselection;
+								}
+								option.config_buttons[(currentselection_fixed - 1) + (menu_config_input ? 7 : 0) ] = Event.key.keysym.sym;
 								exit_map = 1;
 							}
 						}
@@ -615,11 +669,11 @@ static void Input_Remapping()
 			if (currentselection == 4) print_string(text, TextRed, 0, 5, 85, backbuffer->pixels);
 			else print_string(text, TextWhite, 0, 5, 85, backbuffer->pixels);
 			
-			snprintf(text, sizeof(text), "A : %s\n", Return_Text_Button(option.config_buttons[4]));
+			snprintf(text, sizeof(text), "1 : %s\n", Return_Text_Button(option.config_buttons[CONFIG_BUTTON_BUTTON1]));
 			if (currentselection == 5) print_string(text, TextRed, 0, 5, 105, backbuffer->pixels);
 			else print_string(text, TextWhite, 0, 5, 105, backbuffer->pixels);
 			
-			snprintf(text, sizeof(text), "B : %s\n", Return_Text_Button(option.config_buttons[5]));
+			snprintf(text, sizeof(text), "2 : %s\n", Return_Text_Button(option.config_buttons[CONFIG_BUTTON_BUTTON2]));
 			if (currentselection == 6) print_string(text, TextRed, 0, 5, 125, backbuffer->pixels);
 			else print_string(text, TextWhite, 0, 5, 125, backbuffer->pixels);
 			
@@ -691,7 +745,7 @@ static void Menu()
     
 	Sound_Pause();
     
-    while (((currentselection != 1) && (currentselection != 7)) || (!pressed))
+    while (((currentselection != 1) && (currentselection != 8)) || (!pressed))
     {
         pressed = 0;
  		SDL_FillRect( backbuffer, NULL, 0 );
@@ -718,14 +772,26 @@ static void Menu()
 		
 		if (currentselection == 5) print_string(text, TextBlue, 0, 5, 75, backbuffer->pixels);
 		else print_string(text, TextWhite, 0, 5, 75, backbuffer->pixels);
-		
-		if (currentselection == 6) print_string("Reset", TextBlue, 0, 5, 87, backbuffer->pixels);
-		else print_string("Reset", TextWhite, 0, 5, 87, backbuffer->pixels);
 
-        if (currentselection == 7) print_string("Quit", TextBlue, 0, 5, 99, backbuffer->pixels);
-		else print_string("Quit", TextWhite, 0, 5, 99, backbuffer->pixels);
+		const static char* scale_str[] = {
+			"Native",
+			"4:3",
+			"5:3",
+			"ERROR!",
+		};
+		snprintf(text, sizeof(text), "Scale : %s", scale_str[option.fullscreen > 2 ? 3 : option.fullscreen]);
+
+		if (currentselection == 6) print_string(text, TextBlue, 0, 5, 87, backbuffer->pixels);
+		else print_string(text, TextWhite, 0, 5, 87, backbuffer->pixels);
+
+		if (currentselection == 7) print_string("Reset", TextBlue, 0, 5, 99, backbuffer->pixels);
+		else print_string("Reset", TextWhite, 0, 5, 99, backbuffer->pixels);
+
+		if (currentselection == 8) print_string("Quit", TextBlue, 0, 5, 111, backbuffer->pixels);
+		else print_string("Quit", TextWhite, 0, 5, 111, backbuffer->pixels);
 
         
+		print_string(__DATE__ " SnDream", TextWhite, 0, 5, 145 - 12, backbuffer->pixels);
 		print_string("By gameblabla, ekeeke", TextWhite, 0, 5, 145, backbuffer->pixels);
 
         while (SDL_PollEvent(&Event))
@@ -737,15 +803,14 @@ static void Menu()
                     case SDLK_UP:
                         currentselection--;
                         if (currentselection == 0)
-                            currentselection = 7;
+                            currentselection = 8;
                         break;
                     case SDLK_DOWN:
                         currentselection++;
-                        if (currentselection == 8)
+                        if (currentselection == 9)
                             currentselection = 1;
                         break;
                     case SDLK_LCTRL:
-                    case SDLK_LALT:
                     case SDLK_RETURN:
                         pressed = 1;
                         break;
@@ -758,6 +823,9 @@ static void Menu()
 							break;
 							case 5:
 								if (option.fm > 0) option.fm--;
+							break;
+							case 6:
+								if (option.fullscreen > 0) option.fullscreen--;
 							break;
                         }
                         break;
@@ -773,15 +841,26 @@ static void Menu()
 							case 5:
 								if (option.fm < 1) option.fm++;
 							break;
+							case 6:
+								#ifdef NOYUV
+								option.fullscreen = 0;
+								#else
+								if (option.fullscreen < 2) option.fullscreen++;
+								#endif
+							break;
                         }
                         break;
+					case SDLK_LALT:
+						currentselection = 1;
+						pressed = 1;
+						break;
 					default:
 					break;
                 }
             }
             else if (Event.type == SDL_QUIT)
             {
-				currentselection = 8;
+				currentselection = 9;
 			}
         }
 
@@ -789,7 +868,7 @@ static void Menu()
         {
             switch(currentselection)
             {
-                case 6:
+                case 7:
                     //reset
                     Sound_Close();
                     Sound_Init();
@@ -822,7 +901,7 @@ static void Menu()
 		SDL_Flip(sdl_screen);
 	}
     
-    if (currentselection == 7)
+    if (currentselection == 8)
         quit = 1;
 	else
 		Sound_Unpause();
@@ -858,8 +937,8 @@ static void config_load()
 		option.config_buttons[CONFIG_BUTTON_LEFT] = SDLK_LEFT;
 		option.config_buttons[CONFIG_BUTTON_RIGHT] = SDLK_RIGHT;
 		
-		option.config_buttons[CONFIG_BUTTON_BUTTON1] = SDLK_LCTRL;
-		option.config_buttons[CONFIG_BUTTON_BUTTON2] = SDLK_LALT;
+		option.config_buttons[CONFIG_BUTTON_BUTTON1] = SDLK_LALT;
+		option.config_buttons[CONFIG_BUTTON_BUTTON2] = SDLK_LCTRL;
 		
 		option.config_buttons[CONFIG_BUTTON_START] = SDLK_RETURN;
 	}
@@ -903,18 +982,10 @@ static void Cleanup(void)
 uint32_t update_window_size(uint32_t w, uint32_t h)
 {
 	if (h == 0) h = 192;
-#ifndef RS90_GGONLY
 #ifdef NOYUV
 	sdl_screen = SDL_SetVideoMode(w, h, 8, SDL_HWSURFACE | SDL_TRIPLEBUF | SDL_HWPALETTE);
 #else
 	sdl_screen = SDL_SetVideoMode(w, h, 24, SDL_HWSURFACE | SDL_TRIPLEBUF | SDL_YUV444 | SDL_ANYFORMAT | SDL_FULLSCREEN);
-#endif
-#else
-#ifdef NOYUV
-	sdl_screen = SDL_SetVideoMode(w, h, 8, SDL_HWSURFACE | SDL_DOUBLEBUF | SDL_HWPALETTE);
-#else
-	sdl_screen = SDL_SetVideoMode(w, h, 24, SDL_HWSURFACE | SDL_DOUBLEBUF | SDL_YUV444 | SDL_ANYFORMAT | SDL_FULLSCREEN);
-#endif
 #endif
 	return 0;
 }
